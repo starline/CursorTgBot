@@ -1,6 +1,6 @@
 # Cursor Telegram Bot
 
-![Cursor Telegram Bot preview](docs/preview.png)
+![Cursor Telegram Bot preview](docs/preview.jpg)
 
 Long-running Telegram bot that forwards messages to a **Cursor SDK local agent**. Each allowed user can drive coding tasks against a target git repository on the same machine.
 

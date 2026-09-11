@@ -53,15 +53,6 @@ def _chunk_text(text: str, limit: int = TG_LIMIT) -> list[str]:
     return chunks
 
 
-def _auth(settings: Settings, message: Message) -> bool:
-    user = message.from_user
-    if user is None or not settings.is_user_allowed(user.id):
-        return False
-    if not settings.is_chat_allowed(message.chat.id):
-        return False
-    return True
-
-
 async def _deny(message: Message) -> None:
     user = message.from_user
     if user is not None:
@@ -72,6 +63,34 @@ async def _deny(message: Message) -> None:
         )
         return
     await message.answer("Нет доступа.")
+
+
+async def _auth(
+    settings: Settings,
+    message: Message,
+    *,
+    deny: bool = True,
+    check_chat: bool = True,
+) -> bool:
+    """Authorize user/chat. Empty allowlist → first user is saved to .env automatically."""
+    user = message.from_user
+    if user is None:
+        if deny:
+            await _deny(message)
+        return False
+    if not settings.is_user_allowed(user.id):
+        if settings.try_claim_first_user(user.id):
+            await message.answer(
+                f"Доступ выдан (первый пользователь).\n"
+                f"id `{user.id}` записан в `ALLOWED_USER_IDS`."
+            )
+        else:
+            if deny:
+                await _deny(message)
+            return False
+    if check_chat and not settings.is_chat_allowed(message.chat.id):
+        return False
+    return True
 
 
 def _thread_id(message: Message) -> int:
@@ -235,8 +254,7 @@ async def _maybe_reply_backlog(message: Message, settings: Settings, text: str) 
 
 @router.message(Command("start", "help"))
 async def cmd_help(message: Message, settings: Settings) -> None:
-    if not _auth(settings, message):
-        await _deny(message)
+    if not await _auth(settings, message):
         return
     forum_hint = (
         "\n\nForum mode: /task → new topic; text and /ask inside a topic = follow-up."
@@ -269,8 +287,7 @@ async def cmd_backlog(
     settings: Settings,
     command: CommandObject,
 ) -> None:
-    if not _auth(settings, message):
-        await _deny(message)
+    if not await _auth(settings, message):
         return
     arg = (command.args or "").strip().lower()
     mode = "deferred" if arg in {"deferred", "отложенные", "defer"} else "active"
@@ -283,10 +300,10 @@ async def cmd_backlog(
 @router.message(Command("info"))
 async def cmd_info(message: Message, settings: Settings) -> None:
     # User allowlist only — so you can discover group id before ALLOWED_CHAT_IDS is set
-    user = message.from_user
-    if user is None or not settings.is_user_allowed(user.id):
-        await _deny(message)
+    if not await _auth(settings, message, check_chat=False):
         return
+    user = message.from_user
+    assert user is not None
 
     chat = message.chat
     lines = [
@@ -313,8 +330,7 @@ async def cmd_info(message: Message, settings: Settings) -> None:
 
 @router.message(Command("status"))
 async def cmd_status(message: Message, settings: Settings, runner: AgentRunner) -> None:
-    if not _auth(settings, message):
-        await _deny(message)
+    if not await _auth(settings, message):
         return
     st = runner.status
     if st.busy and st.current_session:
@@ -327,8 +343,7 @@ async def cmd_status(message: Message, settings: Settings, runner: AgentRunner) 
 
 @router.message(Command("cancel"))
 async def cmd_cancel(message: Message, settings: Settings, runner: AgentRunner) -> None:
-    if not _auth(settings, message):
-        await _deny(message)
+    if not await _auth(settings, message):
         return
     ok = await runner.cancel_current()
     await _reply(message, "Cancel запрошен." if ok else "Нет активного run.")
@@ -336,8 +351,7 @@ async def cmd_cancel(message: Message, settings: Settings, runner: AgentRunner) 
 
 @router.message(Command("new"))
 async def cmd_new(message: Message, settings: Settings, runner: AgentRunner) -> None:
-    if not _auth(settings, message):
-        await _deny(message)
+    if not await _auth(settings, message):
         return
     await runner.drop_session(_session_key(message))
     await _reply(message, "Сессия агента сброшена для этого топика/чата.")
@@ -345,8 +359,7 @@ async def cmd_new(message: Message, settings: Settings, runner: AgentRunner) -> 
 
 @router.message(Command("diff"))
 async def cmd_diff(message: Message, settings: Settings) -> None:
-    if not _auth(settings, message):
-        await _deny(message)
+    if not await _auth(settings, message):
         return
     cwd = settings.repo_cwd
     status = await asyncio.to_thread(_run_git, cwd, ["status", "-sb"])
@@ -356,8 +369,7 @@ async def cmd_diff(message: Message, settings: Settings) -> None:
 
 @router.message(Command("phpunit"))
 async def cmd_phpunit(message: Message, settings: Settings, command: CommandObject) -> None:
-    if not _auth(settings, message):
-        await _deny(message)
+    if not await _auth(settings, message):
         return
     args = (command.args or "").split()
     await _reply(message, "PHPUnit…")
@@ -367,8 +379,7 @@ async def cmd_phpunit(message: Message, settings: Settings, command: CommandObje
 
 @router.message(Command("phpstan"))
 async def cmd_phpstan(message: Message, settings: Settings, command: CommandObject) -> None:
-    if not _auth(settings, message):
-        await _deny(message)
+    if not await _auth(settings, message):
         return
     args = (command.args or "").split()
     await _reply(message, "PHPStan…")
@@ -384,8 +395,7 @@ async def cmd_task(
     runner: AgentRunner,
     command: CommandObject,
 ) -> None:
-    if not _auth(settings, message):
-        await _deny(message)
+    if not await _auth(settings, message):
         return
     text = (command.args or "").strip()
     if not text:
@@ -415,8 +425,7 @@ async def cmd_ask(
     runner: AgentRunner,
     command: CommandObject,
 ) -> None:
-    if not _auth(settings, message):
-        await _deny(message)
+    if not await _auth(settings, message):
         return
     text = (command.args or "").strip()
     if not text:
@@ -439,7 +448,7 @@ async def plain_text(
     settings: Settings,
     runner: AgentRunner,
 ) -> None:
-    if not _auth(settings, message):
+    if not await _auth(settings, message, deny=False):
         return
     text = (message.text or "").strip()
     if not text:
@@ -582,7 +591,7 @@ async def run_bot(settings: Settings, runner: AgentRunner) -> None:
     )
     if not settings.allowed_user_ids:
         logger.warning(
-            "ALLOWED_USER_IDS is empty — all commands are denied until you add your user id "
-            "(send any message to the bot to see it)"
+            "ALLOWED_USER_IDS is empty — the first user who messages the bot "
+            "will be allowlisted automatically"
         )
     await dp.start_polling(bot)

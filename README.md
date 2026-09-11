@@ -11,51 +11,39 @@ No public webhook — the bot uses Telegram long polling.
 - Python 3.11+
 - A [Cursor](https://cursor.com) account with an API key
 - A Telegram bot token from [@BotFather](https://t.me/BotFather)
-- A local git repository for the agent to work in (`REPO_CWD`)
 
 ## Installation
 
 ```bash
 git clone https://github.com/starline/CursorTgBot.git
-cd CursorTgBot
-
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-cp .env.example .env
+cd your-project          # repo the agent should edit
+/path/to/CursorTgBot/run.sh
 ```
 
-Edit `.env` and set at least:
+On first start the script creates a venv, copies `.env`, and asks only for:
 
-| Variable | Description |
-|----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Token from BotFather |
-| `ALLOWED_USER_IDS` | Your Telegram user id(s), comma-separated (can be empty on first run to discover the id) |
-| `CURSOR_API_KEY` | Cursor API key (Dashboard → API Keys) |
-| `REPO_CWD` | Absolute path to the target git repo |
+1. **Telegram bot token**
+2. **Cursor API key**
+3. **Repo path** (default: the directory you launched from)
 
-Optional:
+Everything else has defaults (`CURSOR_MODEL=auto`, `BOT_DATA_DIR=./data`, forum mode off).
 
-| Variable | Description |
-|----------|-------------|
-| `ALLOWED_CHAT_IDS` | Restrict to specific group/supergroup ids (empty = any chat, still filtered by user) |
-| `FORUM_MODE` | `1` to use Telegram forum topics |
-| `FORUM_CHAT_ID` | Supergroup id with Topics enabled |
-| `CURSOR_MODEL` | Model id (default in example: `auto`) |
-| `BOT_DATA_DIR` | Session/DB directory (default: `./data`) |
+Then open a DM with the bot and send any message — **the first user is allowlisted automatically** (id written to `.env`). Restart is not required.
 
-To get your Telegram user id: start the bot and send any message (or `/info`). If you are not allowlisted yet, the bot replies with your id — put it in `ALLOWED_USER_IDS` and restart. In a group, send `/info` to get the chat id for `ALLOWED_CHAT_IDS` / `FORUM_CHAT_ID`.
+Keep the process running (`tmux`, systemd, …). The agent needs network access to Cursor and write access to the target repo.
 
-## Run
+### Optional `.env` tweaks
 
-```bash
-./run.sh
-# or:
-source .venv/bin/activate && python -m bot
-```
+| Variable | Default | When to set |
+|----------|---------|-------------|
+| `REPO_CWD` | launch directory | Bot lives elsewhere / you always start from the bot folder |
+| `ALLOWED_USER_IDS` | first DM auto-claims | Lock to specific users up front |
+| `ALLOWED_CHAT_IDS` | any chat | Restrict to a group |
+| `FORUM_MODE` / `FORUM_CHAT_ID` | off | One Telegram topic per `/task` |
+| `CURSOR_MODEL` | `auto` | Pin a model id |
+| `BOT_DATA_DIR` | `./data` | Custom session DB path |
 
-Keep the process running (systemd, `tmux`, etc.). The agent needs network access to Cursor and write access to `REPO_CWD`.
+In a group, send `/info` to get the chat id for `ALLOWED_CHAT_IDS` / `FORUM_CHAT_ID`.
 
 ## Usage
 
@@ -97,7 +85,7 @@ Only one agent **run** is active at a time (global queue). The agent will not co
 
 ## Security
 
-- Only users listed in `ALLOWED_USER_IDS` can use the bot.
+- Only allowlisted users can use the bot (first DM auto-claims if the list was empty).
 - Optionally restrict chats with `ALLOWED_CHAT_IDS`.
 - The local Cursor SDK runs tools **without IDE approval prompts** — treat this bot like shell access to `REPO_CWD`.
 - Never commit `.env`. Keep the repo private if your deployment details are sensitive, or rotate keys if they leak.
@@ -108,7 +96,7 @@ Only one agent **run** is active at a time (global queue). The agent will not co
 CursorTgBot/
 ├── bot/           # Telegram handlers + Cursor agent runner
 ├── data/          # Local session store (gitignored)
-├── .env.example   # Template for configuration
+├── .env.example   # Minimal template (defaults in code)
 ├── requirements.txt
-└── run.sh
+└── run.sh         # venv + interactive setup + start
 ```

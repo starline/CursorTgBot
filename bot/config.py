@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 _BOT_ROOT = Path(__file__).resolve().parent.parent
-_REPO_DEFAULT = _BOT_ROOT.parent.parent  # HugSalesSolo
+_REPO_DEFAULT = _BOT_ROOT.parent / "HugSalesSolo"
 
 
 def _parse_id_set(raw: str) -> frozenset[int]:
@@ -69,6 +69,10 @@ def load_settings() -> Settings:
     repo_cwd = Path(os.getenv("REPO_CWD") or _REPO_DEFAULT).expanduser().resolve()
     if not repo_cwd.is_dir():
         raise SystemExit(f"REPO_CWD is not a directory: {repo_cwd}")
+    if not (repo_cwd / ".git").exists() and not (repo_cwd / "AGENTS.md").exists():
+        raise SystemExit(
+            f"REPO_CWD does not look like HugSalesSolo (no .git/AGENTS.md): {repo_cwd}"
+        )
 
     data_dir = Path(os.getenv("BOT_DATA_DIR") or (_BOT_ROOT / "data")).expanduser().resolve()
     data_dir.mkdir(parents=True, exist_ok=True)

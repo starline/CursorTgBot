@@ -125,18 +125,30 @@ class TypingKeepalive:
                 continue
 
 
-async def _fit_edit(text: str, limit: int = TG_LIMIT) -> str:
+def _fit_edit(text: str, limit: int = TG_LIMIT) -> str:
     """Fit growing transcript into one Telegram message (keep the tail)."""
     if len(text) <= limit:
         return text
     return "…\n" + text[-(limit - 2) :]
 
 
-async def _edit_progress(status_msg: Message, text: str) -> None:
+async def _edit_progress(status_msg: Message, text: str) -> bool:
     try:
         await status_msg.edit_text(_fit_edit(text))
+        return True
     except Exception:  # noqa: BLE001
         logger.debug("progress edit failed", exc_info=True)
+        return False
+
+
+async def _finish_status(status_msg: Message, text: str) -> None:
+    """Prefer editing the status message; fall back to a new reply if edit fails."""
+    if await _edit_progress(status_msg, text):
+        return
+    try:
+        await status_msg.answer(_fit_edit(text))
+    except Exception:  # noqa: BLE001
+        logger.exception("failed to deliver final status")
 
 
 @router.message(Command("start", "help"))
@@ -374,10 +386,10 @@ async def _start_task_in_new_topic(
     async with TypingKeepalive(bot, forum_chat_id, thread_id):
         try:
             result = await runner.enqueue(session, text, on_progress)
-            await _edit_progress(status_msg, header + result + "\n\n— готово")
+            await _finish_status(status_msg, header + result + "\n\n— готово")
         except Exception as exc:  # noqa: BLE001
             logger.exception("task failed")
-            await _edit_progress(status_msg, header + f"Ошибка: {exc}")
+            await _finish_status(status_msg, header + f"Ошибка: {exc}")
 
 
 async def _run_agent_task(
@@ -397,10 +409,10 @@ async def _run_agent_task(
     async with TypingKeepalive(bot, chat_id, thread_id):
         try:
             result = await runner.enqueue(session, text, on_progress)
-            await _edit_progress(status_msg, f"{result}\n\n— готово")
+            await _finish_status(status_msg, f"{result}\n\n— готово")
         except Exception as exc:  # noqa: BLE001
             logger.exception("task failed")
-            await _edit_progress(status_msg, f"Ошибка: {exc}")
+            await _finish_status(status_msg, f"Ошибка: {exc}")
 
 
 def _run_git(cwd: Path, args: list[str]) -> str:

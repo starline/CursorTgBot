@@ -170,12 +170,15 @@ class AgentRunner:
 
         status = getattr(result, "status", None)
         status_s = str(status).lower() if status is not None else ""
+        raw = getattr(result, "result", None)
         final = live.strip()
+        if isinstance(raw, str) and raw.strip():
+            # Prefer SDK terminal text when present (more reliable than stream concat).
+            final = raw.strip()
         if not final:
-            raw = getattr(result, "result", None)
-            final = raw if isinstance(raw, str) and raw.strip() else "(нет текстового ответа)"
+            final = "(нет текстового ответа)"
 
-        if status_s and "finished" not in status_s and "success" not in status_s:
+        if status_s and status_s not in {"finished", "success"}:
             return f"Статус: {status}\n\n{final}"
         return final
 

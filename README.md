@@ -7,7 +7,7 @@ Standalone repo (not part of HugSalesSolo). Points at the shop via `REPO_CWD` in
 ## Setup
 
 ```bash
-cd /home/starl/cursor-tg-bot
+cd /home/starl/CursorTgBot
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt

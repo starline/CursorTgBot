@@ -1,0 +1,34 @@
+---
+description: Start/stop the Cursor Telegram bot when the user asks
+alwaysApply: true
+---
+
+# Bot lifecycle (start / stop)
+
+When the user asks to **start**, **run**, **запусти**, or **включи** the bot — follow **Start**.
+When they ask to **stop**, **kill**, **останови**, or **выключи** the bot — follow **Stop**.
+Do this immediately; do not only paste instructions.
+
+Project root: the CursorTgBot repo (directory with `run.sh` and `bot/`).
+Process signature: `python -m bot` (started via `./run.sh`).
+Only **one** instance may poll Telegram; a second causes `TelegramConflictError`.
+
+## Start
+
+1. Check if already running:
+   `pgrep -af 'python -m bot'`
+2. If a process exists → report that the bot is already running (pid) and **do not** start another.
+3. Otherwise from the project root, start in background with full permissions/network:
+   `./run.sh`
+4. Wait ~3–5s and confirm logs show `Polling Telegram` / `Start polling` and **no** `TelegramConflictError`.
+5. Reply briefly: bot is up (mention `@HugSalesDevBot` if logs show it).
+
+Do not print `.env` secrets. Do not change `.env` unless the user asks.
+
+## Stop
+
+1. Find processes: `pgrep -af 'python -m bot'`
+2. If none → say the bot is not running.
+3. Otherwise stop them: `pkill -f 'python -m bot'` (use `kill -9` only if they survive a second).
+4. Verify with `pgrep -af 'python -m bot'` — expect no matches.
+5. Reply briefly: bot stopped.

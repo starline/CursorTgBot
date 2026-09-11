@@ -38,6 +38,14 @@ def _auth(settings: Settings, message: Message) -> bool:
 
 
 async def _deny(message: Message) -> None:
+    user = message.from_user
+    if user is not None:
+        await message.answer(
+            "Нет доступа.\n"
+            f"Твой Telegram user id: `{user.id}`\n"
+            "Добавь его в `ALLOWED_USER_IDS` в `.env` и перезапусти бота."
+        )
+        return
     await message.answer("Нет доступа.")
 
 
@@ -460,9 +468,15 @@ async def run_bot(settings: Settings, runner: AgentRunner) -> None:
     bot = Bot(token=settings.telegram_token)
     dp = build_dispatcher(settings, runner)
     logger.info(
-        "Polling Telegram… repo=%s forum_mode=%s forum_chat_id=%s",
+        "Polling Telegram… repo=%s forum_mode=%s forum_chat_id=%s allowed_users=%s",
         settings.repo_cwd,
         settings.forum_mode,
         settings.forum_chat_id,
+        len(settings.allowed_user_ids),
     )
+    if not settings.allowed_user_ids:
+        logger.warning(
+            "ALLOWED_USER_IDS is empty — all commands are denied until you add your user id "
+            "(send any message to the bot to see it)"
+        )
     await dp.start_polling(bot)

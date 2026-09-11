@@ -62,8 +62,8 @@ def load_settings() -> Settings:
         raise SystemExit("CURSOR_API_KEY is required (.env)")
 
     allowed_users = _parse_id_set(os.getenv("ALLOWED_USER_IDS") or "")
-    if not allowed_users:
-        raise SystemExit("ALLOWED_USER_IDS is required (comma-separated Telegram user ids)")
+    # Empty allowlist is allowed so you can DM the bot once, read your user id from
+    # the denial message, then set ALLOWED_USER_IDS and restart.
 
     repo_raw = (os.getenv("REPO_CWD") or "").strip()
     if not repo_raw:

@@ -31,7 +31,7 @@ Edit `.env` and set at least:
 | Variable | Description |
 |----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Token from BotFather |
-| `ALLOWED_USER_IDS` | Your Telegram user id(s), comma-separated |
+| `ALLOWED_USER_IDS` | Your Telegram user id(s), comma-separated (can be empty on first run to discover the id) |
 | `CURSOR_API_KEY` | Cursor API key (Dashboard → API Keys) |
 | `REPO_CWD` | Absolute path to the target git repo |
 
@@ -45,7 +45,7 @@ Optional:
 | `CURSOR_MODEL` | Model id (default in example: `auto`) |
 | `BOT_DATA_DIR` | Session/DB directory (default: `./data`) |
 
-Find your Telegram user id with [@userinfobot](https://t.me/userinfobot). In a group, send `/info` after the bot is running to learn the chat id.
+To get your Telegram user id: start the bot and send any message (or `/info`). If you are not allowlisted yet, the bot replies with your id — put it in `ALLOWED_USER_IDS` and restart. In a group, send `/info` to get the chat id for `ALLOWED_CHAT_IDS` / `FORUM_CHAT_ID`.
 
 ## Run
 

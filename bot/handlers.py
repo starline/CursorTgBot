@@ -157,22 +157,22 @@ async def cmd_help(message: Message, settings: Settings) -> None:
         await _deny(message)
         return
     forum_hint = (
-        "\n\nForum mode: /task → новый топик; в топике текст и /ask — follow-up."
+        "\n\nForum mode: /task → new topic; text and /ask inside a topic = follow-up."
         if settings.forum_mode
         else ""
     )
     await _reply(
         message,
-        "HugSales local Cursor agent.\n\n"
-        "/task <текст> — задача агенту"
-        + (" (новый топик)" if settings.forum_mode else "")
+        "Cursor local agent bot.\n\n"
+        "/task <text> — start a task"
+        + (" (new topic)" if settings.forum_mode else "")
         + "\n"
-        "/ask <текст> — follow-up в текущем топике/чате\n"
-        "/info — chat/group id и метаданные\n"
-        "/status — очередь / run\n"
-        "/cancel — отменить текущий run\n"
+        "/ask <text> — follow-up in the current topic/chat\n"
+        "/info — chat/group id and metadata\n"
+        "/status — queue / run\n"
+        "/cancel — cancel the current run\n"
         "/diff — git status + diff --stat\n"
-        "/new — сбросить агента этой сессии\n"
+        "/new — reset the agent for this session\n"
         "/phpunit [args]\n"
         "/phpstan [args]"
         + forum_hint,

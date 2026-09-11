@@ -16,7 +16,7 @@ No public webhook — the bot uses Telegram long polling.
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_USER/CursorTgBot.git
+git clone https://github.com/starline/CursorTgBot.git
 cd CursorTgBot
 
 python3 -m venv .venv

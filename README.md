@@ -83,6 +83,8 @@ Session key = `(chat_id, thread_id)` → one Cursor agent session per topic.
 |---------|--------|
 | `/task <text>` | New task (new topic if forum mode is on) |
 | `/ask <text>` | Follow-up in the current topic/chat |
+| `/backlog` | Active backlog tasks (`proposed` / `ready` / `doing`) from `REPO_CWD` |
+| `/backlog deferred` | Deferred backlog tasks |
 | `/info` | Chat/group id, forum flags, thread id |
 | `/status` | Idle / running / queue |
 | `/cancel` | Cancel the current run |

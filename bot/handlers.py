@@ -7,10 +7,12 @@ import subprocess
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F, Router
+from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from bot.agent_runner import AgentRunner
+from bot.backlog_view import format_backlog_html, is_backlog_list_request, load_tasks
 from bot.config import Settings
 from bot.store import SessionKey
 
@@ -26,6 +28,29 @@ def _truncate(text: str, limit: int = TG_LIMIT) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 20] + "\n\n… (обрезано)"
+
+
+def _chunk_text(text: str, limit: int = TG_LIMIT) -> list[str]:
+    """Split long replies head-first so Telegram lists keep P0… at the start."""
+    text = text.strip()
+    if not text:
+        return [""]
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    rest = text
+    while rest:
+        if len(rest) <= limit:
+            chunks.append(rest)
+            break
+        cut = rest.rfind("\n", 0, limit)
+        if cut < limit // 2:
+            cut = limit
+        piece = rest[:cut].rstrip()
+        chunks.append(piece if piece else rest[:limit])
+        rest = rest[cut:].lstrip("\n") if cut < len(rest) else ""
+    return chunks
 
 
 def _auth(settings: Settings, message: Message) -> bool:
@@ -76,6 +101,14 @@ def _topic_name(text: str) -> str:
     if len(cleaned) > TOPIC_NAME_LIMIT:
         cleaned = cleaned[: TOPIC_NAME_LIMIT - 1].rstrip() + "…"
     return cleaned
+
+
+def _forum_topic_link(chat_id: int, thread_id: int) -> str | None:
+    """Private forum topic deep-link: https://t.me/c/<id_without_-100>/<thread_id>."""
+    s = str(chat_id)
+    if not s.startswith("-100"):
+        return None
+    return f"https://t.me/c/{s[4:]}/{thread_id}"
 
 
 async def _reply(
@@ -150,13 +183,54 @@ async def _edit_progress(status_msg: Message, text: str) -> bool:
 
 
 async def _finish_status(status_msg: Message, text: str) -> None:
-    """Prefer editing the status message; fall back to a new reply if edit fails."""
-    if await _edit_progress(status_msg, text):
-        return
-    try:
-        await status_msg.answer(_fit_edit(text))
-    except Exception:  # noqa: BLE001
-        logger.exception("failed to deliver final status")
+    """Edit status with the first chunk; send remaining chunks as follow-ups (head-first)."""
+    parts = _chunk_text(text)
+    first, *rest = parts
+    if await _edit_progress(status_msg, first):
+        pass
+    else:
+        try:
+            await status_msg.answer(first)
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to deliver final status")
+            return
+    for part in rest:
+        try:
+            await status_msg.answer(part)
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to deliver status chunk")
+            break
+
+
+async def _send_html_chunks(message: Message, chunks: list[str]) -> None:
+    for i, chunk in enumerate(chunks):
+        try:
+            if i == 0:
+                await message.answer(chunk, parse_mode=ParseMode.HTML)
+            else:
+                await message.answer(chunk, parse_mode=ParseMode.HTML)
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to send HTML chunk")
+            # Fallback without parse_mode if HTML rejected
+            try:
+                await message.answer(re.sub(r"<[^>]+>", "", chunk))
+            except Exception:  # noqa: BLE001
+                logger.exception("plain fallback failed")
+                break
+
+
+async def _reply_backlog(message: Message, settings: Settings, mode: str) -> None:
+    tasks = await asyncio.to_thread(load_tasks, settings.repo_cwd, mode=mode)
+    chunks = format_backlog_html(tasks, mode=mode)
+    await _send_html_chunks(message, chunks)
+
+
+async def _maybe_reply_backlog(message: Message, settings: Settings, text: str) -> bool:
+    mode = is_backlog_list_request(text)
+    if mode is None:
+        return False
+    await _reply_backlog(message, settings, mode)
+    return True
 
 
 @router.message(Command("start", "help"))
@@ -176,6 +250,8 @@ async def cmd_help(message: Message, settings: Settings) -> None:
         + (" (new topic)" if settings.forum_mode else "")
         + "\n"
         "/ask <text> — follow-up in the current topic/chat\n"
+        "/backlog — active tasks (proposed/ready/doing)\n"
+        "/backlog deferred — deferred tasks\n"
         "/info — chat/group id and metadata\n"
         "/status — queue / run\n"
         "/cancel — cancel the current run\n"
@@ -185,6 +261,23 @@ async def cmd_help(message: Message, settings: Settings) -> None:
         "/phpstan [args]"
         + forum_hint,
     )
+
+
+@router.message(Command("backlog"))
+async def cmd_backlog(
+    message: Message,
+    settings: Settings,
+    command: CommandObject,
+) -> None:
+    if not _auth(settings, message):
+        await _deny(message)
+        return
+    arg = (command.args or "").strip().lower()
+    mode = "deferred" if arg in {"deferred", "отложенные", "defer"} else "active"
+    if arg and mode == "active" and arg not in {"active", "all", "задачи"}:
+        await _reply(message, "Использование: /backlog  или  /backlog deferred")
+        return
+    await _reply_backlog(message, settings, mode)
 
 
 @router.message(Command("info"))
@@ -299,6 +392,9 @@ async def cmd_task(
         await _reply(message, "Нужен текст: /task …")
         return
 
+    if await _maybe_reply_backlog(message, settings, text):
+        return
+
     if settings.forum_mode:
         if settings.forum_chat_id is None:
             await _reply(
@@ -327,6 +423,9 @@ async def cmd_ask(
         await _reply(message, "Нужен текст: /ask …")
         return
 
+    if await _maybe_reply_backlog(message, settings, text):
+        return
+
     if settings.forum_mode and not _is_in_topic(message):
         await _reply(message, "Follow-up только внутри топика задачи. Новый task: /task …")
         return
@@ -344,6 +443,9 @@ async def plain_text(
         return
     text = (message.text or "").strip()
     if not text:
+        return
+
+    if await _maybe_reply_backlog(message, settings, text):
         return
 
     if settings.forum_mode:
@@ -384,7 +486,11 @@ async def _start_task_in_new_topic(
         text=header + "Принято…",
     )
     try:
-        await message.answer(f"Топик создан: {name}")
+        link = _forum_topic_link(forum_chat_id, thread_id)
+        ack = f"Топик создан: {name}"
+        if link:
+            ack = f"{ack}\n{link}"
+        await message.answer(ack)
     except Exception:  # noqa: BLE001
         logger.debug("origin ack failed", exc_info=True)
 

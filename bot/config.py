@@ -10,8 +10,51 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 _BOT_ROOT = Path(__file__).resolve().parent.parent
-_ENV_PATH = _BOT_ROOT / ".env"
 _EXAMPLE_PATH = _BOT_ROOT / ".env.example"
+
+
+def env_file_path() -> Path:
+    """`.env` path. Desktop app sets CURSOR_TG_ENV (AppData when frozen)."""
+    raw = (os.getenv("CURSOR_TG_ENV") or "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return _BOT_ROOT / ".env"
+
+
+def format_env_value(value: str) -> str:
+    if any(char in value for char in "\n\r"):
+        raise ValueError("env value contains a newline")
+    if value == "" or any(char in value for char in " #'\""):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return value
+
+
+def read_env_values(path: Path | None = None) -> dict[str, str]:
+    from dotenv import dotenv_values
+
+    target = path or env_file_path()
+    if not target.exists():
+        return {}
+    raw = dotenv_values(target)
+    return {key: val for key, val in raw.items() if key and val is not None}
+
+
+def upsert_env_values(values: dict[str, str], *, path: Path | None = None) -> None:
+    """Create or update KEY=value lines. Other lines and comments stay."""
+    target = path or env_file_path()
+    text = target.read_text(encoding="utf-8") if target.exists() else ""
+    for key, value in values.items():
+        line = f"{key}={format_env_value(value)}"
+        pattern = re.compile(rf"^(?:export\s+)?{re.escape(key)}\s*=.*$", re.MULTILINE)
+        if pattern.search(text):
+            text = pattern.sub(line, text, count=1)
+        else:
+            if text and not text.endswith("\n"):
+                text += "\n"
+            text += line + "\n"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +80,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def _upsert_env(key: str, value: str) -> None:
     """Create or update KEY=value in .env (preserves other lines/comments)."""
-    text = _ENV_PATH.read_text(encoding="utf-8") if _ENV_PATH.exists() else ""
-    line = f"{key}={value}"
-    pattern = re.compile(rf"^(?:export\s+)?{re.escape(key)}\s*=.*$", re.MULTILINE)
-    if pattern.search(text):
-        text = pattern.sub(line, text, count=1)
-    else:
-        if text and not text.endswith("\n"):
-            text += "\n"
-        text += line + "\n"
-    _ENV_PATH.write_text(text, encoding="utf-8")
+    upsert_env_values({key: value})
     os.environ[key] = value
 
 
@@ -65,16 +99,18 @@ def _prompt(label: str, *, default: str = "", secret: bool = False) -> str:
 
 def ensure_env_file() -> None:
     """Create .env from the example template if missing."""
-    if _ENV_PATH.exists():
+    target = env_file_path()
+    if target.exists():
         return
+    target.parent.mkdir(parents=True, exist_ok=True)
     if _EXAMPLE_PATH.exists():
-        _ENV_PATH.write_text(_EXAMPLE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+        target.write_text(_EXAMPLE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
     else:
-        _ENV_PATH.write_text(
+        target.write_text(
             "TELEGRAM_BOT_TOKEN=\nCURSOR_API_KEY=\n# REPO_CWD=\n",
             encoding="utf-8",
         )
-    print(f"Created {_ENV_PATH}", file=sys.stderr)
+    print(f"Created {target}", file=sys.stderr)
 
 
 def interactive_setup(*, start_cwd: Path | None = None) -> None:
@@ -83,7 +119,7 @@ def interactive_setup(*, start_cwd: Path | None = None) -> None:
     Optional vars keep defaults (repo = start cwd, model = auto, …).
     """
     ensure_env_file()
-    load_dotenv(_ENV_PATH, override=False)
+    load_dotenv(env_file_path(), override=False)
 
     missing = [k for k in _REQUIRED if not (os.getenv(k) or "").strip()]
     if not missing:
@@ -93,7 +129,7 @@ def interactive_setup(*, start_cwd: Path | None = None) -> None:
         raise SystemExit(
             "Missing config: "
             + ", ".join(missing)
-            + f". Edit {_ENV_PATH} or run ./run.sh in a terminal."
+            + f". Edit {env_file_path()} or run ./run.sh in a terminal."
         )
 
     print("Cursor Telegram Bot — quick setup", file=sys.stderr)
@@ -117,7 +153,7 @@ def interactive_setup(*, start_cwd: Path | None = None) -> None:
         if chosen:
             _upsert_env("REPO_CWD", chosen)
 
-    print(f"\nSaved {_ENV_PATH}", file=sys.stderr)
+    print(f"\nSaved {env_file_path()}", file=sys.stderr)
     if not (os.getenv("ALLOWED_USER_IDS") or "").strip():
         print(
             "ALLOWED_USER_IDS пуст — первый, кто напишет боту, получит доступ автоматически.\n",
@@ -174,7 +210,7 @@ def load_settings(*, start_cwd: Path | None = None) -> Settings:
         start = Path(raw_start).expanduser().resolve() if raw_start else Path.cwd()
 
     interactive_setup(start_cwd=start)
-    load_dotenv(_ENV_PATH, override=True)
+    load_dotenv(env_file_path(), override=True)
 
     token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     api_key = (os.getenv("CURSOR_API_KEY") or "").strip()

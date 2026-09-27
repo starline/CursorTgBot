@@ -45,6 +45,45 @@ Keep the process running (`tmux`, systemd, …). The agent needs network access 
 
 In a group, send `/info` to get the chat id for `ALLOWED_CHAT_IDS` / `FORUM_CHAT_ID`.
 
+## Desktop app
+
+A settings window and tray icon around the same bot. Windows is the packaged target. Linux and macOS use the same Python shell; their installer scripts are ready to run on those systems.
+
+### Windows
+
+From a checkout (Python 3.11+):
+
+```bat
+CursorTgBot.bat
+```
+
+The script creates `.venv`, installs `requirements-desktop.txt`, and opens the window. Closing the window hides it to the tray. **Выход** stops the bot.
+
+To build an `.exe` on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
+```
+
+Output: `dist\CursorTgBot\CursorTgBot.exe` and `dist\CursorTgBot-windows.zip`. The frozen app stores `.env` in `%APPDATA%\CursorTgBot`.
+
+### Linux and macOS
+
+Same window, from the repo:
+
+```bash
+python3 launch_desktop.py
+```
+
+Folder builds (run on that OS):
+
+```bash
+./packaging/linux/build.sh
+./packaging/macos/build.sh
+```
+
+Login autostart is implemented for all three systems (Windows Run key, XDG autostart, LaunchAgent).
+
 ## Usage
 
 ### Private chat
@@ -98,9 +137,14 @@ Agent replies are wrapped with Telegram-specific formatting in `bot/prompt.py` (
 
 ```
 CursorTgBot/
-├── bot/           # Telegram handlers + Cursor agent runner
-├── data/          # Local session store (gitignored)
-├── .env.example   # Minimal template (defaults in code)
+├── bot/                 # Telegram handlers + Cursor agent runner
+├── desktop/             # Settings window and tray (Windows, Linux, macOS)
+├── packaging/           # PyInstaller spec and per-OS build scripts
+├── data/                # Local session store (gitignored)
+├── .env.example
 ├── requirements.txt
-└── run.sh         # venv + interactive setup + start
+├── requirements-desktop.txt
+├── launch_desktop.py    # Desktop entry
+├── CursorTgBot.bat      # Windows launcher
+└── run.sh               # Terminal launcher
 ```

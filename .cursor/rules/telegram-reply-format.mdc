@@ -1,0 +1,28 @@
+---
+description: Telegram reply formatting for agent answers via this bot
+alwaysApply: true
+---
+
+# Telegram reply format
+
+Agent answers go to **Telegram**, not Cursor IDE. Canonical prompt wrapper: `bot/prompt.py` (`AGENT_CONTEXT` / `wrap_user_task`).
+
+## Rules for agent replies
+
+- **No markdown tables** (`| col | col |`) — Telegram renders them as garbage.
+- Prefer plain text with clear visual spacing.
+- Backlog / task lists: short header, groups `—— P0 (N) ——`, each task a block:
+
+  ```
+  FP-05  M · proposed
+  Title text
+  ```
+
+  Sort P0→P3, then effort S→L; full matching list, no truncation.
+- Do not rely on canvas-only deliverables; users need the text in chat.
+- Keep prose short; list first when the user asked for a list.
+
+## Bot-native backlog UI
+
+- `/backlog` and short «дай список задач» → `bot/backlog_view.py` HTML (not the agent).
+- Do not reintroduce Telegram list formatting into target-repo rules (e.g. HugSalesSolo `backlog.mdc`) — IDE keeps markdown tables.

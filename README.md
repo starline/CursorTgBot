@@ -83,6 +83,10 @@ Session key = `(chat_id, thread_id)` → one Cursor agent session per topic.
 
 Only one agent **run** is active at a time (global queue). The agent will not commit or push unless you ask for that in the prompt.
 
+### Reply formatting (Telegram)
+
+Agent replies are wrapped with Telegram-specific formatting in `bot/prompt.py` (no markdown tables; backlog lists as plain-text blocks). Short «дай список задач» / `/backlog` use HTML from `bot/backlog_view.py`. Target-repo Cursor rules (e.g. HugSalesSolo) keep the IDE table format and should not duplicate Telegram styles.
+
 ## Security
 
 - Only allowlisted users can use the bot (first DM auto-claims if the list was empty).

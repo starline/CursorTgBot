@@ -14,7 +14,7 @@ _EXAMPLE_PATH = _BOT_ROOT / ".env.example"
 
 
 def env_file_path() -> Path:
-    """`.env` path. Desktop app sets CURSOR_TG_ENV (AppData when frozen)."""
+    """`.env` path. CURSOR_TG_ENV overrides it when set."""
     raw = (os.getenv("CURSOR_TG_ENV") or "").strip()
     if raw:
         return Path(raw).expanduser().resolve()

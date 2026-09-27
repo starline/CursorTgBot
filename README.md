@@ -64,45 +64,6 @@ Type a task the way you would message the bot. `/help` lists commands. Ctrl+C ca
 
 `./run.sh` is still the Telegram bot. The CLI does not poll Telegram.
 
-## Desktop app
-
-A settings window and tray icon around the same bot. Windows is the packaged target. Linux and macOS use the same Python shell; their installer scripts are ready to run on those systems.
-
-### Windows
-
-From a checkout (Python 3.11+):
-
-```bat
-CursorTgBot.bat
-```
-
-The script creates `.venv`, installs `requirements-desktop.txt`, and opens the window. Closing the window hides it to the tray. **Quit** stops the bot.
-
-To build an `.exe` on Windows:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
-```
-
-Output: `dist\CursorTgBot\CursorTgBot.exe` and `dist\CursorTgBot-windows.zip`. The frozen app stores `.env` in `%APPDATA%\CursorTgBot`.
-
-### Linux and macOS
-
-Same window, from the repo:
-
-```bash
-python3 launch_desktop.py
-```
-
-Folder builds (run on that OS):
-
-```bash
-./packaging/linux/build.sh
-./packaging/macos/build.sh
-```
-
-Login autostart is implemented for all three systems (Windows Run key, XDG autostart, LaunchAgent).
-
 ## Usage
 
 ### Private chat
@@ -157,15 +118,10 @@ Agent replies are wrapped with Telegram-specific formatting in `bot/prompt.py` (
 ```
 CursorTgBot/
 ├── bot/                 # Telegram handlers + Cursor agent runner
-├── cli/                 # Terminal UI (Claude CLI style)
-├── desktop/             # Settings window and tray (Windows, Linux, macOS)
-├── packaging/           # PyInstaller spec and per-OS build scripts
+├── cli/                 # Terminal UI
 ├── data/                # Local session store (gitignored)
 ├── .env.example
 ├── requirements.txt
-├── requirements-desktop.txt
-├── launch_desktop.py    # Desktop entry
-├── CursorTgBot.bat      # Windows launcher
 ├── run.sh               # Telegram bot launcher
 ├── tgBot                # Terminal agent (`tgBot` on PATH)
 └── cli.sh               # Same launcher as tgBot

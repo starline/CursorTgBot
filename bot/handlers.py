@@ -8,6 +8,7 @@ from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.filters import Command, CommandObject
 from aiogram.types import BotCommand, Message
 
@@ -36,6 +37,43 @@ BOT_COMMANDS: list[BotCommand] = [
 
 TG_LIMIT = 3900
 TOPIC_NAME_LIMIT = 128
+_FLOOD_UNTIL: dict[int, float] = {}
+
+
+def _now() -> float:
+    return asyncio.get_running_loop().time()
+
+
+def _mark_flood(chat_id: int, seconds: int) -> None:
+    wait = min(max(int(seconds), 1), 60)
+    _FLOOD_UNTIL[chat_id] = max(_FLOOD_UNTIL.get(chat_id, 0), _now() + wait)
+
+
+async def _wait_flood(chat_id: int) -> None:
+    remaining = _FLOOD_UNTIL.get(chat_id, 0) - _now()
+    if remaining > 0:
+        logger.warning("Chat %s is flood-limited, waiting %.0fs", chat_id, remaining)
+        await asyncio.sleep(remaining)
+
+
+async def _retry_telegram(factory, *, chat_id: int, what: str):  # type: ignore[no-untyped-def]
+    """Repeat a Telegram call when the server asks us to wait."""
+    last_exc: TelegramRetryAfter | None = None
+    for attempt in range(4):
+        await _wait_flood(chat_id)
+        try:
+            return await factory()
+        except TelegramRetryAfter as exc:
+            last_exc = exc
+            _mark_flood(chat_id, int(exc.retry_after) + 1)
+            logger.warning(
+                "%s hit flood control, retry in %ss (attempt %s)",
+                what,
+                exc.retry_after,
+                attempt + 1,
+            )
+    assert last_exc is not None
+    raise last_exc
 
 
 def _truncate(text: str, limit: int = TG_LIMIT) -> str:
@@ -208,9 +246,21 @@ def _fit_edit(text: str, limit: int = TG_LIMIT) -> str:
 
 
 async def _edit_progress(status_msg: Message, text: str) -> bool:
+    chat_id = status_msg.chat.id
+    if _FLOOD_UNTIL.get(chat_id, 0) > _now():
+        return False
     try:
         await status_msg.edit_text(_fit_edit(text))
         return True
+    except TelegramRetryAfter as exc:
+        _mark_flood(chat_id, int(exc.retry_after) + 1)
+        logger.warning("Progress edit flood-limited for %ss", exc.retry_after)
+        return False
+    except TelegramBadRequest as exc:
+        if "not modified" in str(exc).lower():
+            return True
+        logger.debug("progress edit failed", exc_info=True)
+        return False
     except Exception:  # noqa: BLE001
         logger.debug("progress edit failed", exc_info=True)
         return False
@@ -220,34 +270,58 @@ async def _finish_status(status_msg: Message, text: str) -> None:
     """Edit status with the first chunk; send remaining chunks as follow-ups (head-first)."""
     parts = _chunk_text(text)
     first, *rest = parts
-    if await _edit_progress(status_msg, first):
-        pass
-    else:
+    chat_id = status_msg.chat.id
+    if not await _edit_progress(status_msg, first):
         try:
-            await status_msg.answer(first)
+            await _retry_telegram(
+                lambda: status_msg.edit_text(_fit_edit(first)),
+                chat_id=chat_id,
+                what="final status edit",
+            )
+        except TelegramBadRequest as exc:
+            if "not modified" not in str(exc).lower():
+                try:
+                    await _retry_telegram(
+                        lambda: status_msg.answer(first),
+                        chat_id=chat_id,
+                        what="final status",
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("failed to deliver final status")
+                    return
         except Exception:  # noqa: BLE001
             logger.exception("failed to deliver final status")
             return
-    for part in rest:
+    for index, part in enumerate(rest):
         try:
-            await status_msg.answer(part)
+            await _retry_telegram(
+                lambda part=part: status_msg.answer(part),
+                chat_id=chat_id,
+                what=f"status chunk {index + 2}",
+            )
         except Exception:  # noqa: BLE001
             logger.exception("failed to deliver status chunk")
             break
 
 
 async def _send_html_chunks(message: Message, chunks: list[str]) -> None:
-    for i, chunk in enumerate(chunks):
+    chat_id = message.chat.id
+    for index, chunk in enumerate(chunks):
         try:
-            if i == 0:
-                await message.answer(chunk, parse_mode=ParseMode.HTML)
-            else:
-                await message.answer(chunk, parse_mode=ParseMode.HTML)
+            await _retry_telegram(
+                lambda chunk=chunk: message.answer(chunk, parse_mode=ParseMode.HTML),
+                chat_id=chat_id,
+                what=f"HTML chunk {index + 1}",
+            )
         except Exception:  # noqa: BLE001
             logger.exception("failed to send HTML chunk")
-            # Fallback without parse_mode if HTML rejected
             try:
-                await message.answer(re.sub(r"<[^>]+>", "", chunk))
+                plain = re.sub(r"<[^>]+>", "", chunk)
+                await _retry_telegram(
+                    lambda plain=plain: message.answer(plain),
+                    chat_id=chat_id,
+                    what=f"plain chunk {index + 1}",
+                )
             except Exception:  # noqa: BLE001
                 logger.exception("plain fallback failed")
                 break

@@ -215,8 +215,9 @@ class AgentRunner:
             await _emit(job, RunNotice(kind="text", text=text))
             live = "".join(chunks)
             now = time.monotonic()
-            # Push full transcript for single-message edit (throttled)
-            if len(live) - last_len >= 120 or (now - last_ts) >= 0.9:
+            # Telegram progress is one edited message. Keep it rare so the chat
+            # is not flood-limited before the final reply.
+            if len(live) - last_len >= 400 or (now - last_ts) >= 5.0:
                 await job.on_progress(live)
                 last_len = len(live)
                 last_ts = now

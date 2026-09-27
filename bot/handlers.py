@@ -9,7 +9,7 @@ from pathlib import Path
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import BotCommand, Message
 
 from bot.agent_runner import AgentRunner
 from bot.backlog_view import format_backlog_html, is_backlog_list_request, load_tasks
@@ -18,6 +18,21 @@ from bot.store import SessionKey
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+# Shown in the Telegram "/" menu (private chats and groups).
+BOT_COMMANDS: list[BotCommand] = [
+    BotCommand(command="task", description="Новая задача"),
+    BotCommand(command="ask", description="Уточнение в этом чате"),
+    BotCommand(command="backlog", description="Активные задачи бэклога"),
+    BotCommand(command="status", description="Очередь и текущий run"),
+    BotCommand(command="cancel", description="Отменить текущий run"),
+    BotCommand(command="diff", description="git status и diff"),
+    BotCommand(command="new", description="Сбросить сессию агента"),
+    BotCommand(command="info", description="Id чата и настройки"),
+    BotCommand(command="phpunit", description="Запустить PHPUnit"),
+    BotCommand(command="phpstan", description="Запустить PHPStan"),
+    BotCommand(command="help", description="Список команд"),
+]
 
 TG_LIMIT = 3900
 TOPIC_NAME_LIMIT = 128
@@ -594,4 +609,6 @@ async def run_bot(settings: Settings, runner: AgentRunner) -> None:
             "ALLOWED_USER_IDS is empty — the first user who messages the bot "
             "will be allowlisted automatically"
         )
+    await bot.set_my_commands(BOT_COMMANDS)
+    logger.info("Telegram command menu set (%s commands)", len(BOT_COMMANDS))
     await dp.start_polling(bot)

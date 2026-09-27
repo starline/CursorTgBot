@@ -113,15 +113,21 @@ def ensure_env_file() -> None:
     print(f"Created {target}", file=sys.stderr)
 
 
-def interactive_setup(*, start_cwd: Path | None = None) -> None:
+def looks_like_project(path: Path) -> bool:
+    return (path / ".git").exists() or (path / "AGENTS.md").exists()
+
+
+def interactive_setup(*, start_cwd: Path | None = None, require_telegram: bool = True) -> None:
     """
     Fill missing required settings interactively when stdin is a TTY.
     Optional vars keep defaults (repo = start cwd, model = auto, …).
+    CLI mode only asks for the Cursor API key.
     """
     ensure_env_file()
     load_dotenv(env_file_path(), override=False)
 
-    missing = [k for k in _REQUIRED if not (os.getenv(k) or "").strip()]
+    required = _REQUIRED if require_telegram else ("CURSOR_API_KEY",)
+    missing = [k for k in required if not (os.getenv(k) or "").strip()]
     if not missing:
         return
 
@@ -132,7 +138,8 @@ def interactive_setup(*, start_cwd: Path | None = None) -> None:
             + f". Edit {env_file_path()} or run ./run.sh in a terminal."
         )
 
-    print("Cursor Telegram Bot — quick setup", file=sys.stderr)
+    title = "Cursor Telegram Bot — quick setup" if require_telegram else "Cursor CLI — quick setup"
+    print(title, file=sys.stderr)
     print("Only required values are asked; the rest use defaults.\n", file=sys.stderr)
 
     if "TELEGRAM_BOT_TOKEN" in missing:
@@ -147,14 +154,14 @@ def interactive_setup(*, start_cwd: Path | None = None) -> None:
             raise SystemExit("CURSOR_API_KEY is required")
         _upsert_env("CURSOR_API_KEY", key)
 
-    if not (os.getenv("REPO_CWD") or "").strip():
+    if require_telegram and not (os.getenv("REPO_CWD") or "").strip():
         default_repo = str((start_cwd or Path.cwd()).resolve())
         chosen = _prompt("Path to target git repo", default=default_repo)
         if chosen:
             _upsert_env("REPO_CWD", chosen)
 
     print(f"\nSaved {env_file_path()}", file=sys.stderr)
-    if not (os.getenv("ALLOWED_USER_IDS") or "").strip():
+    if require_telegram and not (os.getenv("ALLOWED_USER_IDS") or "").strip():
         print(
             "ALLOWED_USER_IDS пуст — первый, кто напишет боту, получит доступ автоматически.\n",
             file=sys.stderr,
@@ -203,18 +210,24 @@ class Settings:
         return True
 
 
-def load_settings(*, start_cwd: Path | None = None) -> Settings:
+def load_settings(
+    *,
+    start_cwd: Path | None = None,
+    require_telegram: bool = True,
+    repo_override: Path | None = None,
+    prefer_start_cwd: bool = False,
+) -> Settings:
     start = start_cwd
     if start is None:
         raw_start = (os.getenv("CURSOR_TG_START_CWD") or "").strip()
         start = Path(raw_start).expanduser().resolve() if raw_start else Path.cwd()
 
-    interactive_setup(start_cwd=start)
+    interactive_setup(start_cwd=start, require_telegram=require_telegram)
     load_dotenv(env_file_path(), override=True)
 
     token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     api_key = (os.getenv("CURSOR_API_KEY") or "").strip()
-    if not token:
+    if require_telegram and not token:
         raise SystemExit("TELEGRAM_BOT_TOKEN is required (.env)")
     if not api_key:
         raise SystemExit("CURSOR_API_KEY is required (.env)")
@@ -223,16 +236,23 @@ def load_settings(*, start_cwd: Path | None = None) -> Settings:
     # Empty allowlist: first user who messages the bot is auto-added (see try_claim_first_user).
 
     repo_raw = (os.getenv("REPO_CWD") or "").strip()
-    if not repo_raw:
+    if repo_override is not None:
+        repo_cwd = repo_override.expanduser().resolve()
+    elif prefer_start_cwd and looks_like_project(start):
+        repo_cwd = start.resolve()
+    elif not repo_raw:
         repo_cwd = start.resolve()
         logger.info("REPO_CWD not set — using start directory: %s", repo_cwd)
     else:
         repo_cwd = Path(repo_raw).expanduser().resolve()
+        if prefer_start_cwd and repo_cwd != start.resolve():
+            logger.info("Start directory is not a project — using REPO_CWD: %s", repo_cwd)
     if not repo_cwd.is_dir():
         raise SystemExit(f"REPO_CWD is not a directory: {repo_cwd}")
-    if not (repo_cwd / ".git").exists() and not (repo_cwd / "AGENTS.md").exists():
+    if not looks_like_project(repo_cwd):
         raise SystemExit(
-            f"REPO_CWD does not look like a project root (no .git or AGENTS.md): {repo_cwd}"
+            f"Not a project root (no .git or AGENTS.md): {repo_cwd}\n"
+            "Run from the repo, set REPO_CWD, or pass --cwd PATH."
         )
 
     data_dir = Path(os.getenv("BOT_DATA_DIR") or (_BOT_ROOT / "data")).expanduser().resolve()

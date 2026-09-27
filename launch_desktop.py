@@ -34,7 +34,7 @@ def main() -> None:
         run()
     except ModuleNotFoundError as exc:
         print(
-            "Не хватает зависимостей. Установи их командой:\n"
+            "Missing dependencies. Install them with:\n"
             "  python -m pip install -r requirements-desktop.txt",
             file=sys.stderr,
         )

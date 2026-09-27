@@ -38,6 +38,7 @@ class TrayIcon:
         self._on_quit = on_quit
         self._is_running = is_running
         self._icon = None
+        self.alive = True
 
     def start(self) -> bool:
         try:
@@ -55,11 +56,11 @@ class TrayIcon:
 
     def _start_icon(self, pystray) -> None:
         menu = pystray.Menu(
-            pystray.MenuItem("Открыть", lambda *_: self._on_open(), default=True),
-            pystray.MenuItem("Запустить", lambda *_: self._on_start(), enabled=lambda *_: not self._is_running()),
-            pystray.MenuItem("Остановить", lambda *_: self._on_stop(), enabled=lambda *_: self._is_running()),
+            pystray.MenuItem("Open", lambda *_: self._on_open(), default=True),
+            pystray.MenuItem("Start", lambda *_: self._on_start(), enabled=lambda *_: not self._is_running()),
+            pystray.MenuItem("Stop", lambda *_: self._on_stop(), enabled=lambda *_: self._is_running()),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Выход", lambda *_: self._on_quit()),
+            pystray.MenuItem("Quit", lambda *_: self._on_quit()),
         )
         self._icon = pystray.Icon(
             "cursortgbot",
@@ -70,10 +71,14 @@ class TrayIcon:
         threading.Thread(target=self._icon.run, name="tray", daemon=True).start()
 
     def set_running(self, running: bool) -> None:
-        if self._icon is None:
+        if self._icon is None or not self.alive:
             return
-        self._icon.icon = tray_image(running)
-        self._icon.title = "Cursor Telegram Bot — запущен" if running else "Cursor Telegram Bot"
+        try:
+            self._icon.icon = tray_image(running)
+            self._icon.title = "Cursor Telegram Bot (running)" if running else "Cursor Telegram Bot"
+        except Exception:  # noqa: BLE001
+            logger.exception("Tray update failed")
+            self.alive = False
 
     def stop(self) -> None:
         if self._icon is None:

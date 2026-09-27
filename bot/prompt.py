@@ -23,6 +23,18 @@ Your reply is delivered to Telegram (mobile chat). Format for that channel:
 - Keep prose short; put the list itself first when the user asked for a list.
 """
 
+CLI_CONTEXT = """You are a Cursor coding agent working in the target repository.
 
-def wrap_user_task(text: str) -> str:
-    return f"{AGENT_CONTEXT}\n\nUser request:\n{text.strip()}"
+Working directory is the repo root. Respect project rules if present (AGENTS.md, .cursor/rules, CONTRIBUTING, etc.).
+
+Do not git commit or push unless the user explicitly asks in this message.
+Keep changes focused. Prefer clear, minimal diffs.
+
+Your reply is shown in a terminal, like Claude Code. Use markdown. Keep prose concise.
+This session is not Telegram — do not apply Telegram reply-formatting rules.
+"""
+
+
+def wrap_user_task(text: str, *, channel: str = "telegram") -> str:
+    context = CLI_CONTEXT if channel == "cli" else AGENT_CONTEXT
+    return f"{context}\n\nUser request:\n{text.strip()}"

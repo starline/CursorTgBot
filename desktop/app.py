@@ -6,6 +6,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
+from desktop.captions import Captions
 from desktop.instance import AlreadyRunning, SingleInstance
 from desktop.logtail import LogTail
 from desktop.paths import project_root, runtime_dir
@@ -33,6 +34,7 @@ class App(tk.Tk):
         self.title("Cursor Telegram Bot")
         self.geometry("720x560")
         self.minsize(680, 460)
+        self.captions = Captions(self)
         self._build()
         self._load_into_form(load_form())
         self._apply_window_icon()
@@ -48,13 +50,15 @@ class App(tk.Tk):
         )
         if tray.start():
             self.tray = tray
-        else:
-            self.hint.configure(
-                text=(
-                    "Первый, кто напишет боту в личку, получит доступ. "
-                    "Закрытие окна останавливает бота и закрывает приложение."
+            if sys.platform == "win32":
+                self.captions.apply(
+                    self.hint,
+                    (
+                        "The first person to message the bot in a private chat is allowed in. "
+                        "Closing the window hides it; the bot keeps running."
+                    ),
+                    wrap=640,
                 )
-            )
 
         if background and self._can_stay_hidden():
             self.withdraw()
@@ -69,8 +73,10 @@ class App(tk.Tk):
         frame.columnconfigure(1, weight=1)
         frame.rowconfigure(8, weight=1)
 
-        self.status_var = tk.StringVar(value="Остановлен")
-        ttk.Label(frame, textvariable=self.status_var).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        self.status_var = tk.StringVar(value="")
+        self.status_label = ttk.Label(frame)
+        self.status_label.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        self._set_status("Stopped")
 
         self.token_var = tk.StringVar()
         self.key_var = tk.StringVar()
@@ -81,24 +87,30 @@ class App(tk.Tk):
         self.autostart_var = tk.BooleanVar(value=False)
         self.launch_var = tk.BooleanVar(value=self.prefs.start_bot_on_launch)
 
-        self.token_entry = self._secret_row(frame, 1, "Токен Telegram", self.token_var, self._show_token)
-        self.key_entry = self._secret_row(frame, 2, "Ключ Cursor API", self.key_var, self._show_key)
+        self.token_entry = self._secret_row(frame, 1, "Telegram token", self.token_var, self._show_token)
+        self.key_entry = self._secret_row(frame, 2, "Cursor API key", self.key_var, self._show_key)
 
-        ttk.Label(frame, text="Папка репозитория").grid(row=3, column=0, sticky="w", pady=4)
+        repo_label = ttk.Label(frame)
+        repo_label.grid(row=3, column=0, sticky="w", pady=4)
+        self.captions.apply(repo_label, "Repository folder")
         ttk.Entry(frame, textvariable=self.repo_var).grid(row=3, column=1, sticky="ew", padx=(8, 8))
-        ttk.Button(frame, text="Обзор…", command=self._browse_repo).grid(row=3, column=2, sticky="ew")
+        browse = ttk.Button(frame, command=self._browse_repo)
+        self.captions.apply(browse, "Browse…")
+        browse.grid(row=3, column=2, sticky="ew")
 
-        ttk.Label(frame, text="Модель").grid(row=4, column=0, sticky="w", pady=4)
+        model_label = ttk.Label(frame)
+        model_label.grid(row=4, column=0, sticky="w", pady=4)
+        self.captions.apply(model_label, "Model")
         ttk.Entry(frame, textvariable=self.model_var).grid(row=4, column=1, sticky="ew", padx=(8, 8))
 
         checks = ttk.Frame(frame)
         checks.grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 4))
         autostart = ttk.Checkbutton(
             checks,
-            text="Запускать при входе в систему",
             variable=self.autostart_var,
             command=self._toggle_autostart,
         )
+        self.captions.apply(autostart, "Start at login")
         autostart.grid(row=0, column=0, sticky="w")
         if not supports_login_autostart():
             autostart.state(["disabled"])
@@ -107,28 +119,38 @@ class App(tk.Tk):
                 self.autostart_var.set(login_autostart_enabled())
             except OSError:
                 logger.exception("Could not read login autostart")
-        ttk.Checkbutton(
+        launch = ttk.Checkbutton(
             checks,
-            text="Запускать бота при открытии",
             variable=self.launch_var,
             command=self._toggle_launch_pref,
-        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        )
+        self.captions.apply(launch, "Start the bot when the app opens")
+        launch.grid(row=1, column=0, sticky="w", pady=(4, 0))
 
         buttons = ttk.Frame(frame)
         buttons.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(8, 8))
-        ttk.Button(buttons, text="Сохранить", command=self.save_settings).grid(row=0, column=0, padx=(0, 6))
-        self.start_btn = ttk.Button(buttons, text="Запустить", command=self.start_bot)
+        save_btn = ttk.Button(buttons, command=self.save_settings)
+        self.captions.apply(save_btn, "Save")
+        save_btn.grid(row=0, column=0, padx=(0, 6))
+        self.start_btn = ttk.Button(buttons, command=self.start_bot)
+        self.captions.apply(self.start_btn, "Start")
         self.start_btn.grid(row=0, column=1, padx=(0, 6))
-        self.stop_btn = ttk.Button(buttons, text="Остановить", command=self.stop_bot, state="disabled")
+        self.stop_btn = ttk.Button(buttons, command=self.stop_bot, state="disabled")
+        self.captions.apply(self.stop_btn, "Stop")
         self.stop_btn.grid(row=0, column=2, padx=(0, 6))
-        ttk.Button(buttons, text="Журнал", command=self._open_log).grid(row=0, column=3, padx=(0, 6))
-        ttk.Button(buttons, text="Выход", command=self.quit_app).grid(row=0, column=4)
+        log_btn = ttk.Button(buttons, command=self._open_log)
+        self.captions.apply(log_btn, "Log")
+        log_btn.grid(row=0, column=3, padx=(0, 6))
+        quit_btn = ttk.Button(buttons, command=self.quit_app)
+        self.captions.apply(quit_btn, "Quit")
+        quit_btn.grid(row=0, column=4)
 
         hint = (
-            "Первый, кто напишет боту в личку, получит доступ. "
-            "Закрытие окна сворачивает его в трей, бот при этом продолжает работать."
+            "The first person to message the bot in a private chat is allowed in. "
+            "Closing the window minimizes it. Quit stops the bot."
         )
-        self.hint = ttk.Label(frame, text=hint, wraplength=640)
+        self.hint = ttk.Label(frame)
+        self.captions.apply(self.hint, hint, wrap=640)
         self.hint.grid(row=7, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         self.log = scrolledtext.ScrolledText(frame, height=12, wrap="word", state="disabled")
@@ -142,14 +164,18 @@ class App(tk.Tk):
         variable: tk.StringVar,
         shown: tk.BooleanVar,
     ) -> ttk.Entry:
-        ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", pady=4)
+        name = ttk.Label(frame)
+        self.captions.apply(name, label)
+        name.grid(row=row, column=0, sticky="w", pady=4)
         entry = ttk.Entry(frame, textvariable=variable, show="*")
         entry.grid(row=row, column=1, sticky="ew", padx=(8, 8))
 
         def toggle() -> None:
             entry.configure(show="" if shown.get() else "*")
 
-        ttk.Checkbutton(frame, text="Показать", variable=shown, command=toggle).grid(row=row, column=2, sticky="w")
+        reveal = ttk.Checkbutton(frame, variable=shown, command=toggle)
+        self.captions.apply(reveal, "Show")
+        reveal.grid(row=row, column=2, sticky="w")
         return entry
 
     def _load_into_form(self, form: BotForm) -> None:
@@ -177,7 +203,7 @@ class App(tk.Tk):
     def _browse_repo(self) -> None:
         current = self.repo_var.get().strip()
         initial = current if current and Path(current).is_dir() else str(Path.home())
-        chosen = filedialog.askdirectory(initialdir=initial, title="Папка репозитория")
+        chosen = filedialog.askdirectory(initialdir=initial, title="Repository folder")
         if chosen:
             self.repo_var.set(chosen)
 
@@ -192,9 +218,9 @@ class App(tk.Tk):
             save_form(form)
         except OSError as exc:
             self._show()
-            messagebox.showerror("Cursor Telegram Bot", f"Не удалось записать настройки:\n{exc}", parent=self)
+            messagebox.showerror("Cursor Telegram Bot", f"Could not save settings:\n{exc}", parent=self)
             return False
-        self.status_var.set("Настройки сохранены")
+        self._set_status("Settings saved")
         return True
 
     def start_bot(self) -> None:
@@ -206,7 +232,7 @@ class App(tk.Tk):
         try:
             self.supervisor.start()
         except OSError as exc:
-            messagebox.showerror("Cursor Telegram Bot", f"Не удалось запустить бота:\n{exc}", parent=self)
+            messagebox.showerror("Cursor Telegram Bot", f"Could not start the bot:\n{exc}", parent=self)
             self._show()
 
     def stop_bot(self) -> None:
@@ -231,10 +257,10 @@ class App(tk.Tk):
         self.destroy()
 
     def _on_close(self) -> None:
-        if self.tray is not None:
+        if sys.platform == "win32" and self.tray is not None and self.tray.alive:
             self.withdraw()
             return
-        self.quit_app()
+        self.iconify()
 
     def _show(self) -> None:
         self.deiconify()
@@ -250,14 +276,14 @@ class App(tk.Tk):
             set_login_autostart(enabled)
         except OSError as exc:
             self.autostart_var.set(not enabled)
-            messagebox.showerror("Cursor Telegram Bot", f"Не удалось изменить автозапуск:\n{exc}", parent=self)
+            messagebox.showerror("Cursor Telegram Bot", f"Could not change login startup:\n{exc}", parent=self)
 
     def _toggle_launch_pref(self) -> None:
         self.prefs = UiPrefs(start_bot_on_launch=bool(self.launch_var.get()))
         try:
             save_prefs(self.prefs_path, self.prefs)
         except OSError as exc:
-            messagebox.showerror("Cursor Telegram Bot", f"Не удалось сохранить настройку:\n{exc}", parent=self)
+            messagebox.showerror("Cursor Telegram Bot", f"Could not save the setting:\n{exc}", parent=self)
 
     def _open_log(self) -> None:
         self.supervisor.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -266,7 +292,13 @@ class App(tk.Tk):
         try:
             open_path(self.supervisor.log_path)
         except OSError as exc:
-            messagebox.showerror("Cursor Telegram Bot", f"Не удалось открыть журнал:\n{exc}", parent=self)
+            messagebox.showerror("Cursor Telegram Bot", f"Could not open the log:\n{exc}", parent=self)
+
+    def _set_status(self, text: str) -> None:
+        if self.status_var.get() == text:
+            return
+        self.status_var.set(text)
+        self.captions.apply(self.status_label, text)
 
     def _append_log(self, text: str) -> None:
         self.log.configure(state="normal")
@@ -286,12 +318,12 @@ class App(tk.Tk):
             self._append_log(chunk)
         running = self.supervisor.running
         if running:
-            self.status_var.set(f"Запущен · pid {self.supervisor.pid}")
-        elif not self.status_var.get().startswith("Настройки"):
-            self.status_var.set("Остановлен")
+            self._set_status(f"Running · pid {self.supervisor.pid}")
+        elif not self.status_var.get().startswith("Settings"):
+            self._set_status("Stopped")
         self.start_btn.configure(state="disabled" if running else "normal")
         self.stop_btn.configure(state="normal" if running else "disabled")
-        if self.tray is not None and running != self._last_running:
+        if self.tray is not None and self.tray.alive and running != self._last_running:
             self.tray.set_running(running)
         self._last_running = running
         self.after(500, self._tick)
@@ -307,7 +339,7 @@ def run_app() -> None:
             root.withdraw()
             messagebox.showinfo(
                 "Cursor Telegram Bot",
-                "Приложение уже запущено. Открой его из трея.",
+                "The app is already running. Open it from the tray.",
             )
             root.destroy()
         return

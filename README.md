@@ -45,6 +45,26 @@ Keep the process running (`tmux`, systemd, …). The agent needs network access 
 
 In a group, send `/info` to get the chat id for `ALLOWED_CHAT_IDS` / `FORUM_CHAT_ID`.
 
+## Terminal CLI
+
+Same launch and the same repo as the Telegram bot. Telegram token is not required.
+
+```bash
+cd your-project          # repo the agent should edit
+/path/to/CursorTgBot/cli.sh
+```
+
+`REPO_CWD` in `.env` wins, same as `./run.sh`. If it is empty, the directory you launched from is used. The session is kept across restarts (like a chat with the bot). `/new` drops it.
+
+```bash
+cli.sh -p "fix the failing test"   # one shot, then exit
+cli.sh --new                       # start a fresh session
+```
+
+Type a task the way you would message the bot. `/help` lists commands. Ctrl+C cancels the current run, Ctrl+D exits.
+
+`./run.sh` is still the Telegram bot. The CLI does not poll Telegram.
+
 ## Desktop app
 
 A settings window and tray icon around the same bot. Windows is the packaged target. Linux and macOS use the same Python shell; their installer scripts are ready to run on those systems.
@@ -57,7 +77,7 @@ From a checkout (Python 3.11+):
 CursorTgBot.bat
 ```
 
-The script creates `.venv`, installs `requirements-desktop.txt`, and opens the window. Closing the window hides it to the tray. **Выход** stops the bot.
+The script creates `.venv`, installs `requirements-desktop.txt`, and opens the window. Closing the window hides it to the tray. **Quit** stops the bot.
 
 To build an `.exe` on Windows:
 
@@ -138,6 +158,7 @@ Agent replies are wrapped with Telegram-specific formatting in `bot/prompt.py` (
 ```
 CursorTgBot/
 ├── bot/                 # Telegram handlers + Cursor agent runner
+├── cli/                 # Terminal UI (Claude CLI style)
 ├── desktop/             # Settings window and tray (Windows, Linux, macOS)
 ├── packaging/           # PyInstaller spec and per-OS build scripts
 ├── data/                # Local session store (gitignored)
@@ -146,5 +167,6 @@ CursorTgBot/
 ├── requirements-desktop.txt
 ├── launch_desktop.py    # Desktop entry
 ├── CursorTgBot.bat      # Windows launcher
-└── run.sh               # Terminal launcher
+├── run.sh               # Telegram bot launcher
+└── cli.sh               # Terminal agent launcher
 ```

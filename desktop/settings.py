@@ -40,14 +40,14 @@ def save_form(form: BotForm) -> None:
 
 def validate_form(form: BotForm) -> str | None:
     if not form.telegram_token.strip():
-        return "Нужен токен Telegram — его выдаёт @BotFather."
+        return "A Telegram token is required. Get one from @BotFather."
     if not form.cursor_api_key.strip():
-        return "Нужен ключ Cursor API (Dashboard → API Keys)."
+        return "A Cursor API key is required (Dashboard → API Keys)."
     repo = Path(form.repo_cwd.strip()).expanduser()
     if not form.repo_cwd.strip():
-        return "Укажи папку git-репозитория."
+        return "Choose the git repository folder."
     if not repo.is_dir():
-        return f"Папка не найдена:\n{repo}"
+        return f"Folder not found:\n{repo}"
     if not (repo / ".git").exists() and not (repo / "AGENTS.md").exists():
-        return f"В папке нет .git или AGENTS.md:\n{repo}"
+        return f"This folder has no .git or AGENTS.md:\n{repo}"
     return None

@@ -119,7 +119,7 @@ class BotSupervisor:
             return
         self._stop_path.unlink(missing_ok=True)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._note("Запускаю бота…")
+        self._note("Starting the bot…")
         child_env = os.environ.copy()
         child_env["CURSOR_TG_ENV"] = str(env_path())
         child_env["BOT_DATA_DIR"] = str(runtime_dir())
@@ -149,7 +149,7 @@ class BotSupervisor:
         pid = self.pid
         if pid is None:
             return
-        self._note("Останавливаю бота…")
+        self._note("Stopping the bot…")
         try:
             self._stop_path.write_text("stop\n", encoding="utf-8")
         except OSError:
@@ -164,7 +164,7 @@ class BotSupervisor:
         if self._log_handle is not None:
             self._log_handle.close()
             self._log_handle = None
-        self._note("Бот остановлен.")
+        self._note("Bot stopped.")
 
     def poll(self) -> None:
         if self._proc is None:
@@ -181,7 +181,7 @@ class BotSupervisor:
         if self._log_handle is not None:
             self._log_handle.close()
             self._log_handle = None
-        self._note(f"Бот завершился (код {code}).")
+        self._note(f"Bot exited (code {code}).")
 
     def _bot_command(self) -> list[str]:
         if is_frozen():
@@ -206,7 +206,7 @@ class BotSupervisor:
         foreign = find_bot_pids()
         if foreign:
             self._write_pid(foreign[0])
-            self._note(f"Подключён уже запущенный бот (pid {foreign[0]}).")
+            self._note(f"Attached to an already running bot (pid {foreign[0]}).")
 
     def _signal(self, pid: int, *, graceful: bool) -> None:
         if sys.platform == "win32":

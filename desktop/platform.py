@@ -59,7 +59,7 @@ def set_login_autostart(enabled: bool) -> None:
     if sys.platform == "linux":
         _linux_set_autostart(enabled)
         return
-    raise OSError("Автозапуск для этой системы ещё не подключён")
+    raise OSError("Login startup is not available on this system")
 
 
 def open_path(path: Path) -> None:

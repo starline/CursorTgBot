@@ -11,7 +11,6 @@ from bot.agent_runner import AgentRunner
 from bot.config import load_settings
 from bot.store import SessionStore
 from cli.repl import execute_turn, interactive, load_slot, session_key
-from cli.trust import ensure_trusted
 
 
 def _start_cwd() -> Path:
@@ -24,7 +23,7 @@ def _start_cwd() -> Path:
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="tgBot",
-        description="Локальный агент в терминале. Как `agent`: рабочая папка — текущий каталог, сначала вопрос про доверие.",
+        description="Локальный агент в терминале. Рабочая папка — каталог, из которого запущен.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
@@ -59,11 +58,6 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Каталог вместо текущей папки (как --workspace у agent)",
     )
     parser.add_argument("--cwd", help="То же, что --workspace")
-    parser.add_argument(
-        "--trust",
-        action="store_true",
-        help="Доверять текущей папке без вопроса",
-    )
     return parser.parse_args(argv)
 
 
@@ -134,7 +128,6 @@ def main(argv: list[str] | None = None) -> None:
     if not workspace.is_dir():
         print(f"Нет такого каталога: {workspace}", file=sys.stderr)
         raise SystemExit(1)
-    ensure_trusted(workspace, force=args.trust)
     try:
         code = asyncio.run(_amain(args, workspace))
     except (KeyboardInterrupt, asyncio.CancelledError):

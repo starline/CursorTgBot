@@ -53,7 +53,7 @@ Same launch and the same repo as the Telegram bot. Telegram token is not require
 tgBot
 ```
 
-`tgBot` is on `PATH` (`~/.local/bin`). It uses the directory you launched from, the same way `agent` does. The first time in a directory it asks you to trust that workspace. After that the session is kept across restarts. `/new` drops it. `--trust` skips the question. `--workspace PATH` picks another directory.
+`tgBot` is on `PATH` (`~/.local/bin`). It uses the directory you launched from. The session is kept across restarts. `/new` drops it. `--workspace PATH` picks another directory.
 
 ```bash
 tgBot -p "fix the failing test"   # one shot, then exit

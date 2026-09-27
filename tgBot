@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Terminal agent, started like Cursor's `agent`:
+# Terminal agent.
 #   tgBot
-# The workspace is the directory you launched from. The first run asks you to trust it.
-# --workspace PATH picks another directory. --trust skips the question.
+# The workspace is the directory you launched from.
+# --workspace PATH picks another directory.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 export CURSOR_TG_START_CWD="${CURSOR_TG_START_CWD:-$(pwd)}"

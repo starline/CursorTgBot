@@ -96,7 +96,10 @@ Session key = `(chat_id, thread_id)` → one Cursor agent session per topic.
 | `/status` | Idle / running / queue |
 | `/cancel` | Cancel the current run |
 | `/diff` | `git status` + `git diff --stat` in `REPO_CWD` |
+| `/model` | Show the model. `/model <id>` saves it and uses it on the next run |
 | `/new` | Drop the agent session for this topic/chat |
+
+Photos, files, and voice notes are saved and passed to the agent with the caption. A reply includes the quoted message. While a run is in progress the status line shows the current tool, and the answer arrives as a new message with buttons: patch file, commit, reset session. `/status` names the active topic and the queue. One run at a time; a waiting topic is told when its turn starts.
 | `/phpunit [args]` | Runs `bash ./scripts/phpunit.sh …` in `REPO_CWD` (if present) |
 | `/phpstan [args]` | Runs `bash ./scripts/phpstan.sh …` in `REPO_CWD` (if present) |
 

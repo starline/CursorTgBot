@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -34,7 +33,7 @@ _ARG_KEYS = (
 
 @dataclass(frozen=True)
 class RunNotice:
-    """Live event for terminal UIs. Telegram keeps using the progress string."""
+    """Live event. Terminal prints it; Telegram turns tool/status into one short line."""
 
     kind: str  # status | text | tool | thinking
     text: str = ""
@@ -48,6 +47,8 @@ class RunnerStatus:
     busy: bool = False
     current_session: SessionKey | None = None
     queue_len: int = 0
+    current_label: str = ""
+    queued: tuple[tuple[SessionKey, str], ...] = ()
 
 
 @dataclass
@@ -56,6 +57,8 @@ class _Job:
     prompt: str
     on_progress: ProgressCb
     on_notice: NoticeCb | None = None
+    label: str = ""
+    queued: bool = False
     done: asyncio.Future[str] = field(default_factory=lambda: asyncio.get_running_loop().create_future())
 
 
@@ -78,16 +81,39 @@ class AgentRunner:
         self._current_run: Any | None = None
         self._current_session: SessionKey | None = None
         self._queue: asyncio.Queue[_Job] = asyncio.Queue()
+        self._pending: list[tuple[SessionKey, str]] = []
+        self._labels: dict[SessionKey, str] = {}
+        self._current_label = ""
         self._worker_task: asyncio.Task[None] | None = None
         self._cancel_requested = False
+        self._close_agents_after_current = False
 
     @property
     def status(self) -> RunnerStatus:
         return RunnerStatus(
             busy=self._current_session is not None,
             current_session=self._current_session,
-            queue_len=self._queue.qsize(),
+            queue_len=len(self._pending),
+            current_label=self._current_label,
+            queued=tuple(self._pending),
         )
+
+    def last_label(self, session: SessionKey) -> str:
+        return self._labels.get(session, "")
+
+    async def apply_model(self, model: str) -> bool:
+        """Switch the model for the next run. Returns True when a run is still in progress."""
+        self._settings.model = model
+        busy = self._current_session is not None
+        if busy:
+            self._close_agents_after_current = True
+            for key in list(self._agents):
+                if key != self._current_session:
+                    await self._close_agent(key)
+            return True
+        for key in list(self._agents):
+            await self._close_agent(key)
+        return False
 
     async def start(self) -> None:
         self._client = await AsyncClient.launch_bridge(workspace=str(self._settings.repo_cwd))
@@ -123,12 +149,23 @@ class AgentRunner:
         on_progress: ProgressCb,
         *,
         on_notice: NoticeCb | None = None,
+        label: str | None = None,
     ) -> str:
-        job = _Job(session=session, prompt=text, on_progress=on_progress, on_notice=on_notice)
-        await self._queue.put(job)
-        pos = self._queue.qsize()
-        if self._current_session is not None:
-            note = f"В очереди (позиция ~{pos}). Один run на репо."
+        shown = _task_label(label or text)
+        self._labels[session] = shown
+        queued = self._current_session is not None or bool(self._pending)
+        job = _Job(
+            session=session,
+            prompt=text,
+            on_progress=on_progress,
+            on_notice=on_notice,
+            label=shown,
+            queued=queued,
+        )
+        self._pending.append((session, shown))
+        self._queue.put_nowait(job)
+        if queued:
+            note = f"В очереди ({len(self._pending)}). Один run на репозиторий."
             await on_progress(note)
             await _emit(job, RunNotice(kind="status", text=note))
         return await job.done
@@ -163,7 +200,10 @@ class AgentRunner:
     async def _worker_loop(self) -> None:
         while True:
             job = await self._queue.get()
+            if self._pending:
+                self._pending.pop(0)
             self._current_session = job.session
+            self._current_label = job.label
             self._cancel_requested = False
             try:
                 result = await self._run_job(job)
@@ -174,20 +214,26 @@ class AgentRunner:
                 if not job.done.done():
                     job.done.set_exception(exc)
             finally:
+                finished = job.session
                 self._current_run = None
                 self._current_session = None
+                self._current_label = ""
+                if self._close_agents_after_current:
+                    self._close_agents_after_current = False
+                    await self._close_agent(finished)
                 self._queue.task_done()
 
     async def _run_job(self, job: _Job) -> str:
-        await _say(job, "Запускаю local agent…")
+        if job.queued:
+            await _say(job, "Очередь дошла. Начинаю.")
+        else:
+            await _say(job, "Начинаю…")
         agent = await self._get_or_create_agent(job.session)
         prompt = wrap_user_task(job.prompt, channel=self._reply_channel)
         run = await agent.send(prompt)
         self._current_run = run
 
         chunks: list[str] = []
-        last_len = 0
-        last_ts = time.monotonic()
 
         async for message in run.messages():
             if self._cancel_requested:
@@ -213,18 +259,8 @@ class AgentRunner:
                 continue
             chunks.append(text)
             await _emit(job, RunNotice(kind="text", text=text))
-            live = "".join(chunks)
-            now = time.monotonic()
-            # Telegram progress is one edited message. Keep it rare so the chat
-            # is not flood-limited before the final reply.
-            if len(live) - last_len >= 400 or (now - last_ts) >= 5.0:
-                await job.on_progress(live)
-                last_len = len(live)
-                last_ts = now
 
         live = "".join(chunks)
-        if live and len(live) != last_len:
-            await job.on_progress(live)
 
         result = await run.wait()
 
@@ -298,6 +334,13 @@ async def _emit(job: _Job, notice: RunNotice) -> None:
         await job.on_notice(notice)
     except Exception:  # noqa: BLE001
         logger.debug("on_notice failed", exc_info=True)
+
+
+def _task_label(text: str) -> str:
+    line = " ".join(text.split())
+    if len(line) > 80:
+        return line[:79].rstrip() + "…"
+    return line
 
 
 def _field(obj: Any, name: str, default: Any = None) -> Any:

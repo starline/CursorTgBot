@@ -11,6 +11,7 @@ from bot.agent_runner import AgentRunner
 from bot.config import load_settings
 from bot.store import SessionStore
 from cli.repl import execute_turn, interactive, load_slot, session_key
+from cli.settings_ui import start_bot_if_pref
 
 
 def _start_cwd() -> Path:
@@ -78,6 +79,11 @@ async def _amain(args: argparse.Namespace, workspace: Path) -> int:
     )
     if args.model:
         settings.model = args.model.strip() or settings.model
+
+    if not args.print_mode:
+        note = start_bot_if_pref(settings)
+        if note and sys.stderr.isatty():
+            print(note, file=sys.stderr)
 
     prompt = " ".join(args.prompt).strip()
     if args.print_mode and not prompt and not sys.stdin.isatty():

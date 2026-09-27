@@ -15,6 +15,7 @@ from bot.agent_runner import AgentRunner, RunNotice
 from bot.backlog_view import is_backlog_list_request, load_tasks
 from bot.config import Settings
 from bot.store import SessionKey
+from cli.settings_ui import find_bot_pids, run_settings, start_bot, stop_bot
 
 
 def workspace_chat_id(workspace: Path) -> int:
@@ -31,6 +32,9 @@ HELP = """\
 /diff                 git status и diff --stat
 /backlog [deferred]   задачи бэклога
 /model [id]           показать или сменить модель
+/settings             токен, ключ, репозиторий, модель, автозапуск, бот
+/start                запустить Telegram-бота
+/stop                 остановить Telegram-бота
 /cwd                  репозиторий
 /phpunit [args]       scripts/phpunit.sh
 /phpstan [args]       scripts/phpstan.sh
@@ -286,6 +290,14 @@ class _Reader:
         def _newline(event) -> None:  # type: ignore[no-untyped-def]
             event.current_buffer.insert_text("\n")
 
+        @bindings.add("f2")
+        def _start_key(_event) -> None:  # type: ignore[no-untyped-def]
+            self._run_bot_action(start_bot)
+
+        @bindings.add("f3")
+        def _stop_key(_event) -> None:  # type: ignore[no-untyped-def]
+            self._run_bot_action(stop_bot)
+
         completer = WordCompleter(
             [
                 "/help",
@@ -297,6 +309,9 @@ class _Reader:
                 "/backlog",
                 "/backlog deferred",
                 "/model",
+                "/settings",
+                "/start",
+                "/stop",
                 "/cwd",
                 "/phpunit",
                 "/phpstan",
@@ -305,14 +320,68 @@ class _Reader:
             ],
             sentence=True,
         )
+        from prompt_toolkit.styles import Style
+
         self._html = HTML
+        self._status_at = 0.0
+        self._running = False
         self._session = PromptSession(
             history=FileHistory(str(history_path)),
             completer=completer,
             complete_while_typing=True,
             key_bindings=bindings,
-            bottom_toolbar=lambda: f" {self._settings.model}  {self._settings.repo_cwd} ",
+            mouse_support=True,
+            bottom_toolbar=self._toolbar,
+            style=Style.from_dict(
+                {
+                    "bottom-toolbar": "bg:#2b2b2b #e8e8e8",
+                    "start-btn": "bg:#2e7d32 #ffffff bold",
+                    "stop-btn": "bg:#b71c1c #ffffff bold",
+                }
+            ),
         )
+
+    def _bot_running(self) -> bool:
+        now = time.monotonic()
+        if now - self._status_at > 0.8:
+            self._running = bool(find_bot_pids())
+            self._status_at = now
+        return self._running
+
+    def _run_bot_action(self, action) -> None:  # type: ignore[no-untyped-def]
+        from prompt_toolkit.application import get_app, run_in_terminal
+
+        message = action(self._settings.data_dir)
+        self._status_at = 0.0
+
+        def _show() -> None:
+            print(message)
+
+        run_in_terminal(_show)
+        get_app().invalidate()
+
+    def _click(self, action):  # type: ignore[no-untyped-def]
+        from prompt_toolkit.mouse_events import MouseEventType
+
+        def handle(mouse_event) -> None:  # type: ignore[no-untyped-def]
+            if mouse_event.event_type == MouseEventType.MOUSE_UP:
+                self._run_bot_action(action)
+
+        return handle
+
+    def _toolbar(self) -> list:
+        running = self._bot_running()
+        state = "запущен" if running else "остановлен"
+        return [
+            ("class:bottom-toolbar", " "),
+            ("class:start-btn", " Старт ", self._click(start_bot)),
+            ("class:bottom-toolbar", " "),
+            ("class:stop-btn", " Стоп ", self._click(stop_bot)),
+            (
+                "class:bottom-toolbar",
+                f"  бот {state}   {self._settings.model}   {self._settings.repo_cwd} ",
+            ),
+        ]
 
     async def read(self) -> str:
         if self._session is None:
@@ -328,7 +397,7 @@ def _print_banner(settings: Settings, *, continued: bool) -> None:
     mode = "продолжение сессии" if continued else "новая сессия"
     print(f"\n{title}  ·  {settings.model}  ·  {mode}")
     print(settings.repo_cwd)
-    print("\nСообщение — задача агенту, как сообщение боту. /help — команды.")
+    print("\nСообщение — задача агенту. Кнопка Старт внизу (или F2) запускает Telegram-бота.")
     print("Ctrl+C — отмена run. Ctrl+D — выход. /new — сброс сессии.\n")
 
 
@@ -451,6 +520,15 @@ async def handle_command(
             print("Текущая сессия уже открыта — /clear, чтобы агент точно взял новую модель.")
         else:
             print(f"Модель: {arg}")
+        return "continue", slot
+    if cmd == "/settings":
+        run_settings(settings)
+        return "continue", slot
+    if cmd == "/start":
+        print(start_bot(settings.data_dir))
+        return "continue", slot
+    if cmd == "/stop":
+        print(stop_bot(settings.data_dir))
         return "continue", slot
     if cmd == "/status":
         st = runner.status

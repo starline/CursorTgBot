@@ -60,7 +60,7 @@ tgBot -p "fix the failing test"   # one shot, then exit
 tgBot --new                       # start a fresh session
 ```
 
-Type a task the way you would message the bot. `/help` lists commands. Ctrl+C cancels the current run, Ctrl+D exits.
+Type a task the way you would message the bot. The **Старт** button at the bottom (or F2, or `/start`) launches the Telegram bot. **Стоп** / F3 / `/stop` stops it. `/settings` edits the token, API key, repository, model, and autostart.
 
 `./run.sh` is still the Telegram bot. The CLI does not poll Telegram.
 

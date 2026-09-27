@@ -50,15 +50,14 @@ In a group, send `/info` to get the chat id for `ALLOWED_CHAT_IDS` / `FORUM_CHAT
 Same launch and the same repo as the Telegram bot. Telegram token is not required.
 
 ```bash
-cd your-project          # repo the agent should edit
-/path/to/CursorTgBot/cli.sh
+tgBot
 ```
 
-`REPO_CWD` in `.env` wins, same as `./run.sh`. If it is empty, the directory you launched from is used. The session is kept across restarts (like a chat with the bot). `/new` drops it.
+`tgBot` is on `PATH` (`~/.local/bin`). It uses the directory you launched from, the same way `agent` does. The first time in a directory it asks you to trust that workspace. After that the session is kept across restarts. `/new` drops it. `--trust` skips the question. `--workspace PATH` picks another directory.
 
 ```bash
-cli.sh -p "fix the failing test"   # one shot, then exit
-cli.sh --new                       # start a fresh session
+tgBot -p "fix the failing test"   # one shot, then exit
+tgBot --new                       # start a fresh session
 ```
 
 Type a task the way you would message the bot. `/help` lists commands. Ctrl+C cancels the current run, Ctrl+D exits.
@@ -168,5 +167,6 @@ CursorTgBot/
 ├── launch_desktop.py    # Desktop entry
 ├── CursorTgBot.bat      # Windows launcher
 ├── run.sh               # Telegram bot launcher
-└── cli.sh               # Terminal agent launcher
+├── tgBot                # Terminal agent (`tgBot` on PATH)
+└── cli.sh               # Same launcher as tgBot
 ```

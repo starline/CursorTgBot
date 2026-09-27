@@ -11,6 +11,7 @@ from bot.agent_runner import AgentRunner
 from bot.config import load_settings
 from bot.store import SessionStore
 from cli.repl import execute_turn, interactive, load_slot, session_key
+from cli.trust import ensure_trusted
 
 
 def _start_cwd() -> Path:
@@ -22,14 +23,14 @@ def _start_cwd() -> Path:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="cli.sh",
-        description="Локальный Cursor-агент в терминале. Репозиторий как у Telegram-бота: REPO_CWD или папка, из которой запущен.",
+        prog="tgBot",
+        description="Локальный агент в терминале. Как `agent`: рабочая папка — текущий каталог, сначала вопрос про доверие.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  cd your-project && /path/to/CursorTgBot/cli.sh\n"
-            "  cli.sh -p \"fix the failing test\"\n"
-            "  cli.sh --new\n"
+            "  tgBot\n"
+            "  tgBot -p \"fix the failing test\"\n"
+            "  tgBot --new\n"
         ),
     )
     parser.add_argument("prompt", nargs="*", help="Первое сообщение. Без -p остаёшься в сессии.")
@@ -53,7 +54,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Начать новую сессию, как /new",
     )
     parser.add_argument("--model", help="Модель (по умолчанию CURSOR_MODEL или auto)")
-    parser.add_argument("--cwd", help="Корень репозитория вместо REPO_CWD")
+    parser.add_argument(
+        "--workspace",
+        help="Каталог вместо текущей папки (как --workspace у agent)",
+    )
+    parser.add_argument("--cwd", help="То же, что --workspace")
+    parser.add_argument(
+        "--trust",
+        action="store_true",
+        help="Доверять текущей папке без вопроса",
+    )
     return parser.parse_args(argv)
 
 
@@ -66,12 +76,11 @@ def _repo_override(cwd_arg: str | None, start: Path) -> Path | None:
     return raw.resolve()
 
 
-async def _amain(args: argparse.Namespace) -> int:
-    start = _start_cwd()
+async def _amain(args: argparse.Namespace, workspace: Path) -> int:
     settings = load_settings(
-        start_cwd=start,
+        start_cwd=workspace,
         require_telegram=False,
-        repo_override=_repo_override(args.cwd, start),
+        repo_override=workspace,
     )
     if args.model:
         settings.model = args.model.strip() or settings.model
@@ -80,7 +89,7 @@ async def _amain(args: argparse.Namespace) -> int:
     if args.print_mode and not prompt and not sys.stdin.isatty():
         prompt = sys.stdin.read().strip()
     if args.print_mode and not prompt:
-        print("Нужен промпт: cli.sh -p \"…\"  или  текст в stdin.", file=sys.stderr)
+        print("Нужен промпт: tgBot -p \"…\"  или  текст в stdin.", file=sys.stderr)
         return 2
 
     store = SessionStore(settings.data_dir / "sessions.sqlite3")
@@ -94,12 +103,12 @@ async def _amain(args: argparse.Namespace) -> int:
         store.close()
         return 1
 
-    slot, resumed = load_slot(settings.data_dir, continue_session=not args.new)
+    slot, resumed = load_slot(settings.data_dir, workspace, continue_session=not args.new)
     try:
         if args.print_mode:
             _result, code = await execute_turn(
                 runner,
-                session_key(slot),
+                session_key(workspace, slot),
                 prompt,
                 print_mode=True,
                 show_timing=False,
@@ -120,8 +129,14 @@ async def _amain(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+    start = _start_cwd()
+    workspace = _repo_override(args.workspace or args.cwd, start) or start
+    if not workspace.is_dir():
+        print(f"Нет такого каталога: {workspace}", file=sys.stderr)
+        raise SystemExit(1)
+    ensure_trusted(workspace, force=args.trust)
     try:
-        code = asyncio.run(_amain(args))
+        code = asyncio.run(_amain(args, workspace))
     except (KeyboardInterrupt, asyncio.CancelledError):
         code = 130
     raise SystemExit(code)

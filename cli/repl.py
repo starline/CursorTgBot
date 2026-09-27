@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import signal
@@ -15,7 +16,12 @@ from bot.backlog_view import is_backlog_list_request, load_tasks
 from bot.config import Settings
 from bot.store import SessionKey
 
-CLI_CHAT_ID = -1
+
+def workspace_chat_id(workspace: Path) -> int:
+    """Stable negative id so each directory has its own agent, apart from Telegram chats."""
+    digest = hashlib.sha256(str(workspace.resolve()).encode()).digest()
+    number = int.from_bytes(digest[:4], "big") & 0x7FFFFFFF
+    return -(number + 2)
 
 HELP = """\
 /help                 команды
@@ -167,32 +173,47 @@ class TurnPrinter:
         self._status_line(text)
 
 
-def load_slot(data_dir: Path, *, continue_session: bool) -> tuple[int, bool]:
-    """Return (slot, resumed). A restart continues the same session, like the bot."""
+def load_slot(data_dir: Path, workspace: Path, *, continue_session: bool) -> tuple[int, bool]:
+    """Return (slot, resumed) for this workspace. A restart continues that directory's session."""
     path = data_dir / "cli_session.json"
-    slot = 0
+    key = str(workspace.resolve())
+    workspaces: dict[str, int] = {}
     if path.exists():
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-            slot = int(raw.get("slot", 0))
+            stored = raw.get("workspaces") if isinstance(raw, dict) else None
+            if isinstance(stored, dict):
+                workspaces = {str(name): int(slot) for name, slot in stored.items()}
         except (OSError, ValueError, TypeError):
-            slot = 0
+            workspaces = {}
+    slot = workspaces.get(key, 0)
     resumed = continue_session and slot >= 1
     if not resumed:
         slot += 1
     if slot < 1:
         slot = 1
-    path.write_text(json.dumps({"slot": slot}) + "\n", encoding="utf-8")
+    workspaces[key] = slot
+    path.write_text(json.dumps({"workspaces": workspaces}, indent=2) + "\n", encoding="utf-8")
     return slot, resumed
 
 
-def save_slot(data_dir: Path, slot: int) -> None:
+def save_slot(data_dir: Path, workspace: Path, slot: int) -> None:
     path = data_dir / "cli_session.json"
-    path.write_text(json.dumps({"slot": slot}) + "\n", encoding="utf-8")
+    workspaces: dict[str, int] = {}
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            stored = raw.get("workspaces") if isinstance(raw, dict) else None
+            if isinstance(stored, dict):
+                workspaces = {str(name): int(value) for name, value in stored.items()}
+        except (OSError, ValueError, TypeError):
+            workspaces = {}
+    workspaces[str(workspace.resolve())] = slot
+    path.write_text(json.dumps({"workspaces": workspaces}, indent=2) + "\n", encoding="utf-8")
 
 
-def session_key(slot: int) -> SessionKey:
-    return (CLI_CHAT_ID, slot)
+def session_key(workspace: Path, slot: int) -> SessionKey:
+    return (workspace_chat_id(workspace), slot)
 
 
 def format_backlog(repo: Path, mode: str) -> str:
@@ -409,7 +430,7 @@ async def handle_command(
     head, _, arg = line.strip().partition(" ")
     cmd = head.lower()
     arg = arg.strip()
-    session = session_key(slot)
+    session = session_key(settings.repo_cwd, slot)
 
     if cmd in {"/exit", "/quit"}:
         return "exit", slot
@@ -445,7 +466,7 @@ async def handle_command(
     if cmd in {"/clear", "/new"}:
         await runner.drop_session(session)
         slot += 1
-        save_slot(settings.data_dir, slot)
+        save_slot(settings.data_dir, settings.repo_cwd, slot)
         print("Сессия сброшена.")
         return "continue", slot
     if cmd == "/diff":
@@ -486,7 +507,7 @@ async def interactive(
     if initial:
         await execute_turn(
             runner,
-            session_key(slot),
+            session_key(settings.repo_cwd, slot),
             initial,
             print_mode=False,
             show_timing=True,
@@ -536,7 +557,7 @@ async def interactive(
         try:
             _result, code = await execute_turn(
                 runner,
-                session_key(slot),
+                session_key(settings.repo_cwd, slot),
                 text,
                 print_mode=False,
                 show_timing=True,
